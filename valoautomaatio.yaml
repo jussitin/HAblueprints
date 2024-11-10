@@ -102,6 +102,10 @@ action:
               brightness_pct: !input brightness_low
               kelvin: !input kelvin_low
             alias: Set brightness to low (nighttime)
+          - service: timer.start
+            target:
+            entity_id: !input timer_entity
+
 
       - conditions:
           # Daytime (before sunset and after sunrise) and light off
@@ -119,6 +123,9 @@ action:
               brightness_pct: !input brightness_high
               kelvin: !input kelvin_high
             alias: Set brightness to high (daytime)
+          - service: timer.start
+            target:
+            entity_id: !input timer_entity
 
   - choose:
       - conditions:
