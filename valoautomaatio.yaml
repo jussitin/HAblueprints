@@ -1,13 +1,13 @@
 blueprint:
   name: Valoautomaatio napilla
-  description: Sytyttää/sammuttaa valot ja säätää kirkkautta nopealla painalluksella.
+  description: Sytyttää/sammuttaa valot ja säätää kirkkautta sekä värilämpötilaa nopealla painalluksella. Muista luoda jokaiselle valoautomaatiolle oma ajastin (timer).
   domain: automation
   input:
     remote_device:
-      name: Remote Device
-      description: The remote device to trigger the automation
+      name: Trigger Device
+      description: The button or other device to trigger the automation
       selector:
-        device:
+        device: {}
     light_entity:
       name: Light Entity
       description: The light to control
@@ -16,13 +16,13 @@ blueprint:
           domain: light
     timer_entity:
       name: Timer Entity
-      description: The timer entity to track double presses
+      description: The timer entity to track time since last button press (eg. 3 seconds)
       selector:
         entity:
           domain: timer
     brightness_low:
       name: Low Brightness Threshold
-      description: The brightness level for low setting (e.g., 1%)
+      description: The brightness level for low setting (eg. 1%)
       default: 1
       selector:
         number:
@@ -31,7 +31,7 @@ blueprint:
           unit_of_measurement: "%"
     brightness_medium:
       name: Medium Brightness Threshold
-      description: The brightness level for medium setting (e.g., 30%)
+      description: The brightness level for medium setting (eg. 30%)
       default: 30
       selector:
         number:
@@ -40,7 +40,7 @@ blueprint:
           unit_of_measurement: "%"
     brightness_high:
       name: High Brightness Threshold
-      description: The brightness level for high setting (e.g., 100%)
+      description: The brightness level for high setting (eg. 100%)
       default: 100
       selector:
         number:
