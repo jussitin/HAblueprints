@@ -8,9 +8,6 @@ blueprint:
       description: The remote device to trigger the automation
       selector:
         device:
-          integration: zha
-          entity:
-            domain: zha
     light_entity:
       name: Light Entity
       description: The light to control
