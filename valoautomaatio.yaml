@@ -104,8 +104,7 @@ action:
             alias: Set brightness to low (nighttime)
           - service: timer.start
             target:
-            entity_id: !input timer_entity
-
+              entity_id: !input timer_entity
 
       - conditions:
           # Daytime (before sunset and after sunrise) and light off
@@ -125,7 +124,7 @@ action:
             alias: Set brightness to high (daytime)
           - service: timer.start
             target:
-            entity_id: !input timer_entity
+              entity_id: !input timer_entity
 
   - choose:
       - conditions:
