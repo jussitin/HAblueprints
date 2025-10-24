@@ -1,22 +1,22 @@
 blueprint:
   name: Single Battery Sensor Low Notification
   description: >
-    Monitors one battery sensor and sends a customizable notification when its
-    percentage falls below a threshold.  
-    Lets you pick an icon visually or define a Jinja template if desired.
+    Monitors one battery sensor and sends a notification when its percentage
+    falls below a defined threshold.  
+    Includes a customizable message and a static icon picker for a simple, visual setup.
   domain: automation
 
   input:
     battery_sensor:
       name: Battery Sensor
-      description: The battery level sensor to monitor.
+      description: Select the battery level sensor to monitor.
       selector:
         entity:
           domain: sensor
 
     notify_devices:
       name: Notification Targets
-      description: Devices or notify services to receive the alert.
+      description: Devices (mobile_app) to receive the alert.
       selector:
         device:
           multiple: true
@@ -24,7 +24,7 @@ blueprint:
 
     battery_threshold:
       name: Battery Threshold
-      description: Notify when battery drops below this value.
+      description: Notify when the battery level drops below this value.
       default: 25
       selector:
         number:
@@ -34,10 +34,10 @@ blueprint:
           mode: slider
 
     message_template:
-      name: Message Template
+      name: Notification Message
       description: >
-        Jinja template for the notification message.  
-        Variable: `entity` (the selected battery sensor).  
+        Use a Jinja template to customize the message.  
+        Variable: `entity` (the selected sensor).  
         Example: "{{ state_attr(entity, 'friendly_name') }} is at {{ states(entity) }}% battery."
       default: "{{ state_attr(entity, 'friendly_name') }} is at {{ states(entity) }}% battery."
       selector:
@@ -45,21 +45,10 @@ blueprint:
 
     icon:
       name: Notification Icon
-      description: >
-        Pick an icon for the notification.  
-        (Optional: leave empty if you want to use a dynamic Jinja template below.)
+      description: Select an icon to display with the notification.
       default: mdi:battery-alert
       selector:
         icon:
-
-    dynamic_icon_template:
-      name: Dynamic Icon Template (optional)
-      description: >
-        Optional Jinja template for dynamic icons.  
-        Example: "{{ 'mdi:battery-alert' if (states(entity) | int < 15) else 'mdi:battery-50' }}"
-      default: ""
-      selector:
-        text:
 
     check_interval:
       name: Check Interval (minutes)
@@ -83,8 +72,7 @@ variables:
   entity: !input battery_sensor
   threshold: !input battery_threshold
   message_template: !input message_template
-  icon_static: !input icon
-  icon_dynamic_template: !input dynamic_icon_template
+  icon: !input icon
 
 condition:
   - condition: template
@@ -93,12 +81,6 @@ condition:
 action:
   - variables:
       message: "{{ message_template }}"
-      icon: >
-        {% if icon_dynamic_template %}
-          {{ icon_dynamic_template }}
-        {% else %}
-          {{ icon_static }}
-        {% endif %}
   - repeat:
       for_each: !input notify_devices
       sequence:
