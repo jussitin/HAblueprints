@@ -1,0 +1,96 @@
+blueprint:
+  name: Single Sensor Percentage Low Notification
+  description: >
+    Monitors one percentage sensor and sends a customizable notification when its
+    percentage falls below a threshold. Ideal for creating separate automations
+    per device with unique messages and icons.
+  domain: automation
+
+  input:
+    percentage_sensor:
+      name: Percentage Sensor
+      description: The percentage level sensor to monitor.
+      selector:
+        entity:
+          domain: sensor
+
+    notify_devices:
+      name: Notification Targets
+      description: Devices or notify services to receive the alert.
+      selector:
+        device:
+          multiple: true
+          integration: mobile_app
+
+    percentage_threshold:
+      name: Percentage Threshold
+      description: Notify when percentage drops below this value.
+      default: 25
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+
+    message_template:
+      name: Message Template
+      description: >
+        Jinja template for the notification message.  
+        Available variable: `entity` (the selected percentage sensor).  
+        Example: "{{ state_attr(entity, 'friendly_name') }} is at {{ states(entity) }}% percentage."
+      default: "{{ state_attr(entity, 'friendly_name') }} is at {{ states(entity) }}% percentage."
+      selector:
+        text:
+
+    icon_template:
+      name: Icon Template
+      description: >
+        Jinja template for the notification icon.  
+        Example: "{{ 'mdi:percentage-alert' if (states(entity) | int < 15) else 'mdi:percentage-50' }}"
+      default: "{{ 'mdi:percentage-alert' if (states(entity) | int < 15) else 'mdi:percentage-50' }}"
+      selector:
+        text:
+
+    check_interval:
+      name: Check Interval (minutes)
+      description: How often to check the percentage level.
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: "min"
+          mode: slider
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: time_pattern
+    minutes: "/{{ check_interval }}"
+
+variables:
+  entity: !input percentage_sensor
+  threshold: !input percentage_threshold
+  message_template: !input message_template
+  icon_template: !input icon_template
+
+condition:
+  - condition: template
+    value_template: "{{ states(entity) is number and (states(entity) | int) <= threshold }}"
+
+action:
+  - variables:
+      message: "{{ message_template }}"
+      icon: "{{ icon_template }}"
+  - repeat:
+      for_each: !input notify_devices
+      sequence:
+        - service: notify.send_message
+          data:
+            target: "{{ device_attr(repeat.item, 'name') }}"
+            title: "Low Percentage Alert"
+            message: "{{ message }}"
+            data:
+              icon: "{{ icon }}"
