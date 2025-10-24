@@ -1,0 +1,122 @@
+blueprint:
+  name: Battery Level Dual-Threshold Notification
+  description: >
+    Monitors one battery sensor and sends up to two notifications when the
+    percentage drops below user-defined thresholds (e.g. 30% and 20%).
+    Both notifications are customizable. If the level drops past both in one go,
+    both alerts are sent immediately.
+  domain: automation
+
+  input:
+    battery_sensor:
+      name: Battery Sensor
+      description: Select the battery level sensor to monitor.
+      selector:
+        entity:
+          domain: sensor
+
+    notify_devices:
+      name: Notification Targets
+      description: Devices (mobile_app) to receive the alert.
+      selector:
+        device:
+          multiple: true
+          integration: mobile_app
+
+    warn_threshold:
+      name: Warning Level (%)
+      description: Battery percentage to trigger first warning.
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+
+    critical_threshold:
+      name: Critical Level (%)
+      description: Battery percentage to trigger second (critical) warning.
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+
+    warn_message:
+      name: Warning Message
+      description: Message when the first (higher) threshold is crossed.
+      default: "{{ state_attr(entity, 'friendly_name') }} battery is getting low ({{ states(entity) }}%)."
+      selector:
+        text:
+
+    critical_message:
+      name: Critical Message
+      description: Message when the second (lower) threshold is crossed.
+      default: "⚠️ {{ state_attr(entity, 'friendly_name') }} battery critically low! ({{ states(entity) }}%)"
+      selector:
+        text:
+
+    icon:
+      name: Notification Icon
+      description: Select an icon for notifications.
+      default: mdi:battery-alert
+      selector:
+        icon:
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  - platform: state
+    entity_id: !input battery_sensor
+
+variables:
+  entity: !input battery_sensor
+  warn_threshold: !input warn_threshold
+  critical_threshold: !input critical_threshold
+  warn_message: !input warn_message
+  critical_message: !input critical_message
+  icon: !input icon
+
+condition:
+  - condition: template
+    value_template: >
+      {{ states(entity) is number }}
+
+action:
+  - variables:
+      old: "{{ trigger.from_state.state | int(default=100) }}"
+      new: "{{ trigger.to_state.state | int(default=100) }}"
+      send_warn: "{{ old > warn_threshold and new <= warn_threshold }}"
+      send_critical: "{{ old > critical_threshold and new <= critical_threshold }}"
+
+  - choose:
+      - conditions: "{{ send_warn or send_critical }}"
+        sequence:
+          - variables:
+              messages: >
+                {% set msgs = [] %}
+                {% if send_warn %}
+                  {% set msgs = msgs + [warn_message] %}
+                {% endif %}
+                {% if send_critical %}
+                  {% set msgs = msgs + [critical_message] %}
+                {% endif %}
+                {{ msgs }}
+
+          - repeat:
+              for_each: "{{ messages }}"
+              sequence:
+                - repeat:
+                    for_each: !input notify_devices
+                    sequence:
+                      - service: notify.send_message
+                        data:
+                          target: "{{ device_attr(repeat.item, 'name') }}"
+                          title: "Low Battery Alert"
+                          message: "{{ repeat.item }}"
+                          data:
+                            icon: "{{ icon }}"
