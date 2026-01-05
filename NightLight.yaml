@@ -1,0 +1,179 @@
+blueprint:
+  name: Bathroom Night Light with Door Logic
+  description: >
+    Turns on a bathroom night light based on corridor motion and door state.
+    Includes usage confirmation, door grace period, auto-off timeout,
+    and optional night-only operation.
+  domain: automation
+
+  input:
+    motion_sensor:
+      name: Motion Sensor
+      selector:
+        entity:
+          domain: binary_sensor
+
+    door_sensor:
+      name: Door Sensor
+      selector:
+        entity:
+          domain: binary_sensor
+
+    night_light:
+      name: Night Light
+      selector:
+        entity:
+          domain: light
+
+    brightness_pct:
+      name: Night Light Brightness (%)
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    usage_confirm_time:
+      name: Usage Confirmation Time
+      default: "00:05:00"
+      selector:
+        duration:
+
+    door_grace_time:
+      name: Door Grace Period
+      default: "00:00:15"
+      selector:
+        duration:
+
+    max_closed_time:
+      name: Max Door Closed Time
+      default: "00:30:00"
+      selector:
+        duration:
+
+    night_only:
+      name: Night Only
+      description: If enabled, automation only runs when sun is below horizon
+      default: true
+      selector:
+        boolean:
+
+mode: restart
+
+variables:
+  motion: !input motion_sensor
+  door: !input door_sensor
+  light: !input night_light
+  brightness: !input brightness_pct
+  night_only: !input night_only
+
+trigger:
+  - platform: state
+    entity_id: !input motion_sensor
+    to: "on"
+
+  - platform: state
+    entity_id: !input door_sensor
+
+  - platform: state
+    entity_id: !input door_sensor
+    to: "off"
+    for: !input max_closed_time
+
+  - platform: event
+    event_type: timer.finished
+
+condition: []
+
+action:
+  - choose:
+
+      # ---- TURN LIGHT ON ----
+      - conditions:
+          - condition: trigger
+            id: motion
+          - condition: state
+            entity_id: !input door_sensor
+            state: "on"
+          - condition: state
+            entity_id: !input night_light
+            state: "off"
+          - condition: or
+            conditions:
+              - condition: state
+                entity_id: sun.sun
+                state: "below_horizon"
+              - condition: template
+                value_template: "{{ not night_only }}"
+        sequence:
+          - service: light.turn_on
+            target:
+              entity_id: !input night_light
+            data:
+              brightness_pct: !input brightness_pct
+
+          - service: timer.start
+            data:
+              duration: !input usage_confirm_time
+            target:
+              entity_id: timer.bathroom_usage_confirm
+
+          - service: timer.start
+            data:
+              duration: !input door_grace_time
+            target:
+              entity_id: timer.bathroom_door_grace
+
+      # ---- USAGE CONFIRMED ----
+      - conditions:
+          - condition: state
+            entity_id: !input door_sensor
+            state: "off"
+          - condition: state
+            entity_id: timer.bathroom_usage_confirm
+            state: "active"
+        sequence:
+          - service: timer.cancel
+            target:
+              entity_id: timer.bathroom_usage_confirm
+
+      # ---- USAGE REJECTED ----
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.event is not none and
+                 trigger.event.data.entity_id == 'timer.bathroom_usage_confirm' }}
+          - condition: state
+            entity_id: !input night_light
+            state: "on"
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id: !input night_light
+
+      # ---- DOOR OPENED AGAIN (AFTER GRACE) ----
+      - conditions:
+          - condition: state
+            entity_id: !input door_sensor
+            state: "on"
+          - condition: state
+            entity_id: !input night_light
+            state: "on"
+          - condition: state
+            entity_id: timer.bathroom_door_grace
+            state: "idle"
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id: !input night_light
+
+      # ---- MAX CLOSED TIME EXCEEDED ----
+      - conditions:
+          - condition: state
+            entity_id: !input night_light
+            state: "on"
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id: !input night_light
