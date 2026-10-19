@@ -1,0 +1,404 @@
+
+blueprint:
+  name: Valoautomaatio napilla - brightness and RGB
+  description: >
+    Sytyttää ja sammuttaa valon napilla. Nopeat peräkkäiset
+    painallukset vaihtavat low, medium ja high -asetusten välillä.
+    Jokaisella asetuksella voi valita värilämpötilan (Kelvin)
+    tai RGB-värin. Ajastimen oletettu kesto on 3 sekuntia.
+  domain: automation
+
+  input:
+    # The ZHA button or remote that triggers the automation
+    remote_device:
+      name: Painike
+      description: ZHA-painike tai kaukosäädin
+      selector:
+        device:
+          filter:
+            - integration: zha
+
+    # The light to control
+    light_entity:
+      name: Ohjattava valo
+      selector:
+        entity:
+          domain: light
+
+    # A dedicated timer helper for this light
+    timer_entity:
+      name: Painallusten ajastin
+      description: Luo erillinen timer-apuri jokaiselle valolle.
+      selector:
+        entity:
+          domain: timer
+
+    # A dedicated input_select helper for this light.
+    # Its options must be: low, medium, high
+    preset_helper:
+      name: Valotilan valitsin
+      description: >
+        input_select-apuri, jonka vaihtoehdot ovat low, medium, high.
+      selector:
+        entity:
+          domain: input_select
+
+    # LOW preset: brightness, color mode, Kelvin and RGB
+    brightness_low:
+      name: Himmeän tilan kirkkaus
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    color_mode_low:
+      name: Himmeän tilan väritila
+      default: kelvin
+      selector:
+        select:
+          options:
+            - label: Värilämpötila (Kelvin)
+              value: kelvin
+            - label: RGB-väri
+              value: rgb
+
+    kelvin_low:
+      name: Himmeän tilan värilämpötila
+      default: 2000
+      selector:
+        number:
+          min: 1000
+          max: 10000
+          unit_of_measurement: K
+
+    rgb_low:
+      name: Himmeän tilan RGB-väri
+      default: [255, 140, 60]
+      selector:
+        color_rgb: {}
+
+    # MEDIUM preset
+    brightness_medium:
+      name: Keskimmäisen tilan kirkkaus
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    color_mode_medium:
+      name: Keskimmäisen tilan väritila
+      default: kelvin
+      selector:
+        select:
+          options:
+            - label: Värilämpötila (Kelvin)
+              value: kelvin
+            - label: RGB-väri
+              value: rgb
+
+    kelvin_medium:
+      name: Keskimmäisen tilan värilämpötila
+      default: 4384
+      selector:
+        number:
+          min: 1000
+          max: 10000
+          unit_of_measurement: K
+
+    rgb_medium:
+      name: Keskimmäisen tilan RGB-väri
+      default: [255, 180, 100]
+      selector:
+        color_rgb: {}
+
+    # HIGH preset
+    brightness_high:
+      name: Kirkkaan tilan kirkkaus
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    color_mode_high:
+      name: Kirkkaan tilan väritila
+      default: kelvin
+      selector:
+        select:
+          options:
+            - label: Värilämpötila (Kelvin)
+              value: kelvin
+            - label: RGB-väri
+              value: rgb
+
+    kelvin_high:
+      name: Kirkkaan tilan värilämpötila
+      default: 4506
+      selector:
+        number:
+          min: 1000
+          max: 10000
+          unit_of_measurement: K
+
+    rgb_high:
+      name: Kirkkaan tilan RGB-väri
+      default: [255, 255, 255]
+      selector:
+        color_rgb: {}
+
+# Trigger on a short press of the selected ZHA remote
+trigger:
+  - platform: device
+    device_id: !input remote_device
+    domain: zha
+    type: remote_button_short_press
+    subtype: remote_button_short_press
+
+condition: []
+
+action:
+  # Expose blueprint inputs as variables for use in templates
+  - variables:
+      light_id: !input light_entity
+      timer_id: !input timer_entity
+      preset_id: !input preset_helper
+
+      low_brightness: !input brightness_low
+      medium_brightness: !input brightness_medium
+      high_brightness: !input brightness_high
+
+      low_mode: !input color_mode_low
+      medium_mode: !input color_mode_medium
+      high_mode: !input color_mode_high
+
+      low_kelvin: !input kelvin_low
+      medium_kelvin: !input kelvin_medium
+      high_kelvin: !input kelvin_high
+
+      low_rgb: !input rgb_low
+      medium_rgb: !input rgb_medium
+      high_rgb: !input rgb_high
+
+  # Decide what to do based on the light and timer state
+  - choose:
+
+      # CASE 1: Light is off.
+      # At night start low; during the day start high.
+      - conditions:
+          - condition: state
+            entity_id: !input light_entity
+            state: "off"
+        sequence:
+          - choose:
+
+              # Nighttime: initialize low preset
+              - conditions:
+                  - condition: sun
+                    after: sunset
+                    before: sunrise
+                sequence:
+                  - action: input_select.select_option
+                    target:
+                      entity_id: !input preset_helper
+                    data:
+                      option: low
+
+                  # Choose Kelvin or RGB for the low preset
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ low_mode == 'rgb' }}"
+                        sequence:
+                          - action: light.turn_on
+                            target:
+                              entity_id: !input light_entity
+                            data:
+                              brightness_pct: !input brightness_low
+                              rgb_color: !input rgb_low
+                    default:
+                      - action: light.turn_on
+                        target:
+                          entity_id: !input light_entity
+                        data:
+                          brightness_pct: !input brightness_low
+                          color_temp_kelvin: !input kelvin_low
+
+            # Daytime or no matching nighttime condition: start high
+            default:
+              - action: input_select.select_option
+                target:
+                  entity_id: !input preset_helper
+                data:
+                  option: high
+
+              # Choose Kelvin or RGB for the high preset
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ high_mode == 'rgb' }}"
+                    sequence:
+                      - action: light.turn_on
+                        target:
+                          entity_id: !input light_entity
+                        data:
+                          brightness_pct: !input brightness_high
+                          rgb_color: !input rgb_high
+                default:
+                  - action: light.turn_on
+                    target:
+                      entity_id: !input light_entity
+                    data:
+                      brightness_pct: !input brightness_high
+                      color_temp_kelvin: !input kelvin_high
+
+      # CASE 2: Light is on and the timer is active.
+      # Cycle to the next preset on every press.
+      - conditions:
+          - condition: state
+            entity_id: !input light_entity
+            state: "on"
+          - condition: state
+            entity_id: !input timer_entity
+            state: "active"
+        sequence:
+          - choose:
+
+              # LOW -> HIGH
+              - conditions:
+                  - condition: state
+                    entity_id: !input preset_helper
+                    state: low
+                sequence:
+                  - action: input_select.select_option
+                    target:
+                      entity_id: !input preset_helper
+                    data:
+                      option: high
+
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ high_mode == 'rgb' }}"
+                        sequence:
+                          - action: light.turn_on
+                            target:
+                              entity_id: !input light_entity
+                            data:
+                              brightness_pct: !input brightness_high
+                              rgb_color: !input rgb_high
+                    default:
+                      - action: light.turn_on
+                        target:
+                          entity_id: !input light_entity
+                        data:
+                          brightness_pct: !input brightness_high
+                          color_temp_kelvin: !input kelvin_high
+
+              # HIGH -> MEDIUM
+              - conditions:
+                  - condition: state
+                    entity_id: !input preset_helper
+                    state: high
+                sequence:
+                  - action: input_select.select_option
+                    target:
+                      entity_id: !input preset_helper
+                    data:
+                      option: medium
+
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ medium_mode == 'rgb' }}"
+                        sequence:
+                          - action: light.turn_on
+                            target:
+                              entity_id: !input light_entity
+                            data:
+                              brightness_pct: !input brightness_medium
+                              rgb_color: !input rgb_medium
+                    default:
+                      - action: light.turn_on
+                        target:
+                          entity_id: !input light_entity
+                        data:
+                          brightness_pct: !input brightness_medium
+                          color_temp_kelvin: !input kelvin_medium
+
+              # MEDIUM -> LOW
+              - conditions:
+                  - condition: state
+                    entity_id: !input preset_helper
+                    state: medium
+                sequence:
+                  - action: input_select.select_option
+                    target:
+                      entity_id: !input preset_helper
+                    data:
+                      option: low
+
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ low_mode == 'rgb' }}"
+                        sequence:
+                          - action: light.turn_on
+                            target:
+                              entity_id: !input light_entity
+                            data:
+                              brightness_pct: !input brightness_low
+                              rgb_color: !input rgb_low
+                    default:
+                      - action: light.turn_on
+                        target:
+                          entity_id: !input light_entity
+                        data:
+                          brightness_pct: !input brightness_low
+                          color_temp_kelvin: !input kelvin_low
+
+            # If the helper is in an unexpected state, recover to medium
+            default:
+              - action: input_select.select_option
+                target:
+                  entity_id: !input preset_helper
+                data:
+                  option: medium
+
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ medium_mode == 'rgb' }}"
+                    sequence:
+                      - action: light.turn_on
+                        target:
+                          entity_id: !input light_entity
+                        data:
+                          brightness_pct: !input brightness_medium
+                          rgb_color: !input rgb_medium
+                default:
+                  - action: light.turn_on
+                    target:
+                      entity_id: !input light_entity
+                    data:
+                      brightness_pct: !input brightness_medium
+                      color_temp_kelvin: !input kelvin_medium
+
+    # CASE 3: Light is on but timer is inactive.
+    # This press turns the light off.
+    default:
+      - action: light.turn_off
+        target:
+          entity_id: !input light_entity
+
+  # Restart the timer after every press.
+  # Set the timer helper duration to 3 seconds in Home Assistant.
+  - action: timer.start
+    target:
+      entity_id: !input timer_entity
+
+mode: restart
