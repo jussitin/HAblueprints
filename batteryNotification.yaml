@@ -1,0 +1,239 @@
+
+blueprint:
+  name: Low battery notification
+  description: >
+    Reusable battery monitoring automation.
+    Sends notifications when a battery stays below a configurable
+    threshold and dismisses the persistent notification after recovery.
+  domain: automation
+
+  input:
+    # ------------------------------------------------------------
+    # BATTERY SENSOR
+    # Select the sensor that reports the battery percentage.
+    # ------------------------------------------------------------
+    battery_sensor:
+      name: Battery sensor
+      description: Sensor reporting the battery level in percent.
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+
+    # ------------------------------------------------------------
+    # DEVICE NAME
+    # Used to generate the Finnish notification title and message.
+    # Example: Pimennysverhon
+    # ------------------------------------------------------------
+    device_name:
+      name: Device name
+      description: >
+        Name of the device, without the word akku or paristo.
+      default: Pimennysverhon
+      selector:
+        text:
+
+    # ------------------------------------------------------------
+    # BATTERY TYPE
+    # Akku means rechargeable; paristo means replaceable.
+    # This determines the notification wording automatically.
+    # ------------------------------------------------------------
+    battery_type:
+      name: Battery type
+      default: akku
+      selector:
+        select:
+          options:
+            - label: Akku (rechargeable)
+              value: akku
+            - label: Paristo (replaceable)
+              value: paristo
+          mode: dropdown
+
+    # ------------------------------------------------------------
+    # LOW BATTERY SETTINGS
+    # The warning triggers only after the battery remains below
+    # this threshold for the configured duration.
+    # ------------------------------------------------------------
+    low_threshold:
+      name: Low battery threshold
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    low_duration:
+      name: Time below threshold
+      description: >
+        How long the battery must remain below the threshold
+        before the warning is triggered.
+      default:
+        hours: 12
+        minutes: 0
+        seconds: 0
+      selector:
+        duration:
+
+    # ------------------------------------------------------------
+    # RECOVERY SETTINGS
+    # The persistent notification is dismissed after the battery
+    # crosses above the recovery threshold and stays there for
+    # the configured duration.
+    # ------------------------------------------------------------
+    recovery_threshold:
+      name: Recovery threshold
+      default: 80
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    recovery_duration:
+      name: Time above recovery threshold
+      default:
+        hours: 0
+        minutes: 5
+        seconds: 0
+      selector:
+        duration:
+
+    # ------------------------------------------------------------
+    # NOTIFICATION DESTINATION
+    # Select a Notify group helper so the same message reaches
+    # all configured phones.
+    # ------------------------------------------------------------
+    notification_target:
+      name: Phone notification target
+      selector:
+        entity:
+          filter:
+            - domain: notify
+
+    # ------------------------------------------------------------
+    # OPTIONAL NOTIFICATION TOGGLES
+    # Disable either notification type if it is not required.
+    # ------------------------------------------------------------
+    persistent_enabled:
+      name: Create persistent notification
+      default: true
+      selector:
+        boolean:
+
+    phone_enabled:
+      name: Send phone notification
+      default: true
+      selector:
+        boolean:
+
+# --------------------------------------------------------------
+# TRIGGERS
+# Explicit aliases make the triggers easier to identify in the UI.
+# --------------------------------------------------------------
+triggers:
+  - trigger: battery.level_crossed_threshold
+    alias: Battery threshold crossed under
+    id: battery_threshold_crossed_under
+    target:
+      entity_id: !input battery_sensor
+    options:
+      for: !input low_duration
+      threshold:
+        type: below
+        value:
+          active_choice: number
+          number: !input low_threshold
+
+  - trigger: battery.level_crossed_threshold
+    alias: Battery threshold crossed over
+    id: battery_threshold_crossed_over
+    target:
+      entity_id: !input battery_sensor
+    options:
+      threshold:
+        type: above
+        value:
+          active_choice: number
+          number: !input recovery_threshold
+      for: !input recovery_duration
+
+conditions: []
+
+# --------------------------------------------------------------
+# VARIABLES
+# Generate the notification text and a unique ID for each sensor.
+# The ID allows this automation to dismiss only its own alert.
+# --------------------------------------------------------------
+variables:
+  device_name: !input device_name
+  battery_type: !input battery_type
+  battery_sensor_entity: !input battery_sensor
+  notification_id: >-
+    {{ battery_sensor_entity | replace('.', '_') }}_low_battery
+  notification_title: >-
+    {{ device_name }} {{ battery_type }} vähissä
+  notification_message: >-
+    {{ ('Lataa ' ~ (device_name | lower) ~ ' akku (USB-C).')
+       if battery_type == 'akku'
+       else ('Vaihda ' ~ (device_name | lower) ~ ' paristo.') }}
+
+# --------------------------------------------------------------
+# ACTIONS
+# Choose the correct sequence based on which trigger fired.
+# --------------------------------------------------------------
+actions:
+  - choose:
+
+      # ========================================================
+      # LOW BATTERY
+      # Create the persistent notification and send the phone
+      # notification, depending on the selected toggles.
+      # ========================================================
+      - conditions:
+          - condition: trigger
+            id: battery_threshold_crossed_under
+        sequence:
+
+          # Create or update the persistent notification.
+          - if:
+              - condition: template
+                value_template: "{{ persistent_enabled }}"
+            then:
+              - action: persistent_notification.create
+                data:
+                  notification_id: "{{ notification_id }}"
+                  title: "{{ notification_title }}"
+                  message: "{{ notification_message }}"
+
+          # Send the same generated title and message to phones.
+          - if:
+              - condition: template
+                value_template: "{{ phone_enabled }}"
+            then:
+              - action: notify.send_message
+                target:
+                  entity_id: !input notification_target
+                data:
+                  title: "{{ notification_title }}"
+                  message: "{{ notification_message }}"
+
+      # ========================================================
+      # BATTERY RECOVERED
+      # Dismiss only this sensor's persistent notification.
+      # This does not clear notifications already delivered
+      # to mobile phones.
+      # ========================================================
+      - conditions:
+          - condition: trigger
+            id: battery_threshold_crossed_over
+        sequence:
+
+          - action: persistent_notification.dismiss
+            data:
+              notification_id: "{{ notification_id }}"
+
+mode: single
