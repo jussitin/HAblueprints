@@ -1,79 +1,96 @@
+
 blueprint:
-  name: Valoautomaatio napilla
-  description: Sytyttää/sammuttaa valot ja säätää kirkkautta sekä värilämpötilaa nopealla painalluksella. Muista luoda jokaiselle valoautomaatiolle oma ajastin (timer).
+  name: Valoautomaatio napilla - preset cycling
+  description: >
+    Sytyttää valon ensimmäisellä painalluksella.
+    Nopeat peräkkäiset painallukset vaihtavat low, medium
+    ja high -asetusten välillä. Kun painallusväli ylittää
+    ajastimen keston, seuraava painallus sammuttaa valon.
   domain: automation
+
   input:
     remote_device:
-      name: Trigger Device
-      description: The button or other device to trigger the automation
+      name: Painike
       selector:
-        device: {}
+        device:
+          filter:
+            - integration: zha
+
     light_entity:
-      name: Light Entity
-      description: The light to control
+      name: Ohjattava valo
       selector:
         entity:
           domain: light
+
     timer_entity:
-      name: Timer Entity
-      description: The timer entity to track time since last button press (eg. 3 seconds)
+      name: Painallusten ajastin
+      description: Ajastimen kesto määrittää painallusikkunan.
       selector:
         entity:
           domain: timer
+
+    preset_helper:
+      name: Valotilan valitsin
+      description: >
+        Luo input_select-apuri, jossa vaihtoehdot ovat
+        low, medium ja high.
+      selector:
+        entity:
+          domain: input_select
+
     brightness_low:
-      name: Low Brightness Threshold
-      description: The brightness level for low setting (eg. 1%)
+      name: Himmeä kirkkaus
       default: 1
       selector:
         number:
-          min: 0
+          min: 1
           max: 100
           unit_of_measurement: "%"
+
     brightness_medium:
-      name: Medium Brightness Threshold
-      description: The brightness level for medium setting (eg. 30%)
+      name: Keskitasoinen kirkkaus
       default: 30
       selector:
         number:
-          min: 0
+          min: 1
           max: 100
           unit_of_measurement: "%"
+
     brightness_high:
-      name: High Brightness Threshold
-      description: The brightness level for high setting (eg. 100%)
+      name: Suuri kirkkaus
       default: 100
       selector:
         number:
-          min: 0
+          min: 1
           max: 100
           unit_of_measurement: "%"
+
     kelvin_low:
-      name: Low Kelvin Temperature
-      description: Kelvin temperature for low brightness setting
+      name: Himmeän tilan värilämpötila
       default: 2000
       selector:
         number:
           min: 1000
-          max: 6500
-          unit_of_measurement: "K"
+          max: 10000
+          unit_of_measurement: K
+
     kelvin_medium:
-      name: Medium Kelvin Temperature
-      description: Kelvin temperature for medium brightness setting
+      name: Keskimmäisen tilan värilämpötila
       default: 4384
       selector:
         number:
           min: 1000
-          max: 6500
-          unit_of_measurement: "K"
+          max: 10000
+          unit_of_measurement: K
+
     kelvin_high:
-      name: High Kelvin Temperature
-      description: Kelvin temperature for high brightness setting
-      default: 5310
+      name: Kirkkaan tilan värilämpötila
+      default: 4506
       selector:
         number:
           min: 1000
-          max: 6500
-          unit_of_measurement: "K"
+          max: 10000
+          unit_of_measurement: K
 
 trigger:
   - platform: device
@@ -86,117 +103,132 @@ condition: []
 
 action:
   - choose:
+      # First press: lamp is off
       - conditions:
-          # Nighttime (before sunrise or after sunset) and light off
-          - condition: sun
-            before: sunrise
-            after: sunset
           - condition: state
             entity_id: !input light_entity
             state: "off"
         sequence:
-          - service: light.turn_on
-            target:
-              entity_id: !input light_entity
-            data:
-              brightness_pct: !input brightness_low
-              kelvin: !input kelvin_low
-            alias: Set brightness to low (nighttime)
-          - service: timer.start
-            target:
-              entity_id: !input timer_entity
+          - choose:
+              # Start low at night
+              - conditions:
+                  - condition: sun
+                    after: sunset
+                    before: sunrise
+                sequence:
+                  - service: input_select.select_option
+                    target:
+                      entity_id: !input preset_helper
+                    data:
+                      option: low
+                  - service: light.turn_on
+                    target:
+                      entity_id: !input light_entity
+                    data:
+                      brightness_pct: !input brightness_low
+                      color_temp_kelvin: !input kelvin_low
 
+            # Otherwise start high
+            default:
+              - service: input_select.select_option
+                target:
+                  entity_id: !input preset_helper
+                data:
+                  option: high
+              - service: light.turn_on
+                target:
+                  entity_id: !input light_entity
+                data:
+                  brightness_pct: !input brightness_high
+                  color_temp_kelvin: !input kelvin_high
+
+      # Repeated press within the timer window
       - conditions:
-          # Daytime (before sunset and after sunrise) and light off
-          - condition: sun
-            before: sunset
-            after: sunrise
           - condition: state
             entity_id: !input light_entity
-            state: "off"
-        sequence:
-          - service: light.turn_on
-            target:
-              entity_id: !input light_entity
-            data:
-              brightness_pct: !input brightness_high
-              kelvin: !input kelvin_high
-            alias: Set brightness to high (daytime)
-          - service: timer.start
-            target:
-              entity_id: !input timer_entity
-
-  - choose:
-      - conditions:
-          # If timer is active and brightness is medium, set to low
-          - condition: state
-            entity_id: !input timer_entity
-            state: "active"
-          - condition: numeric_state
-            entity_id: !input light_entity
-            attribute: brightness
-            below: 110
-            above: 50
-        sequence:
-          - service: light.turn_on
-            target:
-              entity_id: !input light_entity
-            data:
-              brightness_pct: !input brightness_low
-              kelvin: !input kelvin_low
-            alias: Set brightness to low
-
-      - conditions:
-          # If timer is active and brightness is high, set to medium
+            state: "on"
           - condition: state
             entity_id: !input timer_entity
             state: "active"
-          - condition: numeric_state
-            entity_id: !input light_entity
-            attribute: brightness
-            above: 110
         sequence:
-          - service: light.turn_on
-            target:
-              entity_id: !input light_entity
-            data:
-              brightness_pct: !input brightness_medium
-              kelvin: !input kelvin_medium
-            alias: Set brightness to medium
+          - choose:
+              # Low -> High
+              - conditions:
+                  - condition: state
+                    entity_id: !input preset_helper
+                    state: low
+                sequence:
+                  - service: input_select.select_option
+                    target:
+                      entity_id: !input preset_helper
+                    data:
+                      option: high
+                  - service: light.turn_on
+                    target:
+                      entity_id: !input light_entity
+                    data:
+                      brightness_pct: !input brightness_high
+                      color_temp_kelvin: !input kelvin_high
 
-      - conditions:
-          # If timer is active and brightness is very low, set to high
-          - condition: state
-            entity_id: !input timer_entity
-            state: "active"
-          - condition: numeric_state
-            entity_id: !input light_entity
-            attribute: brightness
-            below: 50
-        sequence:
-          - service: light.turn_on
-            target:
-              entity_id: !input light_entity
-            data:
-              brightness_pct: !input brightness_high
-              kelvin: !input kelvin_high
-            alias: Set brightness to high
+              # High -> Medium
+              - conditions:
+                  - condition: state
+                    entity_id: !input preset_helper
+                    state: high
+                sequence:
+                  - service: input_select.select_option
+                    target:
+                      entity_id: !input preset_helper
+                    data:
+                      option: medium
+                  - service: light.turn_on
+                    target:
+                      entity_id: !input light_entity
+                    data:
+                      brightness_pct: !input brightness_medium
+                      color_temp_kelvin: !input kelvin_medium
 
-      - conditions:
-          # Turn off light if timer is not active
-          - condition: not
-            conditions:
-              - condition: state
-                entity_id: !input timer_entity
-                state: "active"
-        sequence:
-          - service: light.turn_off
-            target:
-              entity_id: !input light_entity
-            alias: Turn off light
+              # Medium -> Low
+              - conditions:
+                  - condition: state
+                    entity_id: !input preset_helper
+                    state: medium
+                sequence:
+                  - service: input_select.select_option
+                    target:
+                      entity_id: !input preset_helper
+                    data:
+                      option: low
+                  - service: light.turn_on
+                    target:
+                      entity_id: !input light_entity
+                    data:
+                      brightness_pct: !input brightness_low
+                      color_temp_kelvin: !input kelvin_low
 
+            # Recover if helper has an unexpected state
+            default:
+              - service: input_select.select_option
+                target:
+                  entity_id: !input preset_helper
+                data:
+                  option: medium
+              - service: light.turn_on
+                target:
+                  entity_id: !input light_entity
+                data:
+                  brightness_pct: !input brightness_medium
+                  color_temp_kelvin: !input kelvin_medium
+
+    # Light is on and the timer has expired: turn it off
+    default:
+      - service: light.turn_off
+        target:
+          entity_id: !input light_entity
+
+  # Restart the timer after handling every press
   - service: timer.start
     target:
       entity_id: !input timer_entity
 
-mode: single
+mode: restart
