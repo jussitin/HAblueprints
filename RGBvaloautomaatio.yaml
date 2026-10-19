@@ -70,6 +70,8 @@ blueprint:
       selector:
         color_temp:
           unit: kelvin
+          min: 1000
+          max: 10000
 
     # Native RGB color picker
     rgb_low:
@@ -104,6 +106,9 @@ blueprint:
       default: 4384
       selector:
         color_temp:
+          unit: kelvin
+          min: 1000
+          max: 10000
 
     rgb_medium:
       name: Keskimmäisen tilan RGB-väri
@@ -138,8 +143,8 @@ blueprint:
       selector:
         color_temp:
           unit: kelvin
-          min: 3000
-          max: 6000
+          min: 1000
+          max: 10000
 
     rgb_high:
       name: Kirkkaan tilan RGB-väri
